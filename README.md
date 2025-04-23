@@ -17,7 +17,7 @@ menu_items:
     items:
       - name: Menu Item 1 from Separator 2
         command: echo "This is another test"
-```
+````
 
 
 ![](20250423172157.png)
