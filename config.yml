@@ -1,0 +1,15 @@
+
+icon: smallicon.png
+logo: logo.png
+menu_title: Title of Menu
+menu_items:
+  - name: Separator 1
+    items:
+      - name: Menu Item 1 from Separator 1
+        command: ls -alF | grep travis
+      - name: Menu Item 2 from Separator 1
+        command: echo "This is a test"
+  - name: Separator 2
+    items:
+      - name: Menu Item 1 from Separator 2
+        command: echo "This is another test"
