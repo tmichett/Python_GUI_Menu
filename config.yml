@@ -1,15 +1,53 @@
-
 icon: smallicon.png
 logo: logo.png
-menu_title: Title of Menu
+logo_size: 320x240 # Specify width x height in pixels
+menu_title: RHCI Foundation Instructor Toolkit
+num_columns: 2  # Define number of columns for the main menu
+
 menu_items:
-  - name: Separator 1
+  - name: Initial Setup
+    column: 1  # This menu item will be in the first column
+    submenu_columns: 2  # This submenu will have 2 columns
     items:
-      - name: Menu Item 1 from Separator 1
-        command: ls -alF | grep travis
-      - name: Menu Item 2 from Separator 1
-        command: echo "This is a test"
-  - name: Separator 2
+      - name: Setup Ansible Inventory
+        column: 1  # This submenu item will be in the first column
+        command: echo "Sets up Ansible Inventory"
+      - name: Setup SSH Files
+        column: 1  # This submenu item will be in the first column
+        command: echo "Sets up SSH Files"
+      - name: Setup DNS
+        column: 2  # This submenu item will be in the second column
+        command: echo "Sets up DNS configuration"
+      - name: Setup Network
+        column: 2  # This submenu item will be in the second column
+        command: echo "Sets up network configuration"
+        
+  - name: Perform RHCI Foundation Testing
+    column: 1  # This menu item will be in the first column
+    # No submenu_columns defined, defaults to 1 column
     items:
-      - name: Menu Item 1 from Separator 2
-        command: echo "This is another test"
+      - name: Test Installation
+        command: echo "Tests the installation"
+      - name: Test Connectivity
+        command: echo "Tests connectivity between nodes"
+        
+  - name: Fix Bastion Items
+    column: 2  # This menu item will be in the second column
+    submenu_columns: 3  # This submenu will have 3 columns
+    items:
+      - name: Fix Bastion MTU
+        column: 1
+        command: echo "Fixes Bastion MTU"
+      - name: Fix Bastion DNS
+        column: 2
+        command: echo "Fixes Bastion DNS"
+      - name: Fix Bastion Network
+        column: 3
+        command: echo "Fixes Bastion Network"
+        
+  - name: Fix Workstation Items
+    column: 2  # This menu item will be in the second column
+    items:
+      - name: Fix Workstation MTU
+        command: echo "Fixes Workstation MTU"
+      # Items without column specified default to column 1

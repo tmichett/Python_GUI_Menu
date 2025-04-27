@@ -3,15 +3,120 @@ import os
 import yaml
 import subprocess
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
-                            QWidget, QLabel, QTextEdit, QFrame, QStackedWidget)
+                            QWidget, QLabel, QTextEdit, QFrame, QStackedWidget,
+                            QHBoxLayout, QGridLayout, QDialog, QSplitter)
 from PyQt5.QtGui import QIcon, QPixmap, QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QProcess, pyqtSignal, QObject
+
+class OutputTerminal(QTextEdit):
+    """Custom QTextEdit that formats and displays terminal output"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setStyleSheet("background-color: #f0f0f0; border-radius: 5px; padding: 10px; font-family: monospace;")
+        self.document().setMaximumBlockCount(5000)  # Limit to prevent memory issues
+    
+    def append_output(self, text, error=False):
+        """Append text to the terminal with appropriate formatting"""
+        # Process text to handle newlines properly
+        color = "#cc0000" if error else "#333333"
+        
+        # HTML escape the text to preserve formatting
+        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
+        # Replace newlines with HTML line breaks
+        text = text.replace("\n", "<br>")
+        
+        # Ensure carriage returns are handled correctly (terminal-like behavior)
+        if "\r" in text and not text.endswith("\r"):
+            lines = text.split("\r")
+            # Replace the last line in the document
+            cursor = self.textCursor()
+            cursor.movePosition(cursor.End)
+            cursor.select(cursor.LineUnderCursor)
+            cursor.removeSelectedText()
+            cursor.insertHtml(f"<span style='color: {color};'>{lines[-1]}</span>")
+        else:
+            # Normal append for text without carriage returns
+            self.append(f"<span style='color: {color};'>{text}</span>")
+        
+        # Scroll to bottom
+        self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+
+class ProcessManager(QObject):
+    """Manages command execution and emits output signals"""
+    output_received = pyqtSignal(str, bool)  # text, is_error
+    process_finished = pyqtSignal(int, QProcess.ExitStatus)  # exit code, exit status
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.process = QProcess()
+        self.process.readyReadStandardOutput.connect(self.handle_stdout)
+        self.process.readyReadStandardError.connect(self.handle_stderr)
+        self.process.finished.connect(self.process_finished)
+    
+    def execute_command(self, command):
+        """Execute a shell command"""
+        if self.process.state() == QProcess.Running:
+            self.process.kill()
+            self.process.waitForFinished()
+        
+        # Use bash for better terminal compatibility
+        self.process.start('bash', ['-c', command])
+    
+    def handle_stdout(self):
+        """Handle standard output data"""
+        data = self.process.readAllStandardOutput().data().decode('utf-8', errors='replace')
+        if data:
+            self.output_received.emit(data, False)
+    
+    def handle_stderr(self):
+        """Handle standard error data"""
+        data = self.process.readAllStandardError().data().decode('utf-8', errors='replace')
+        if data:
+            self.output_received.emit(data, True)
+
+class OutputWindow(QDialog):
+    """Detachable window for command output"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Command Output")
+        self.setMinimumSize(600, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        # Output terminal
+        self.output_terminal = OutputTerminal()
+        layout.addWidget(self.output_terminal)
+        
+        # Create buttons for the dialog
+        button_layout = QHBoxLayout()
+        
+        # Clear button
+        self.clear_button = QPushButton("Clear Output")
+        self.clear_button.clicked.connect(self.output_terminal.clear)
+        button_layout.addWidget(self.clear_button)
+        
+        # Close button
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.hide)
+        button_layout.addWidget(self.close_button)
+        
+        layout.addLayout(button_layout)
 
 class MenuApplication(QMainWindow):
     def __init__(self, config_file):
         super().__init__()
         self.config = self.load_config(config_file)
         self.init_ui()
+        
+        # Create process manager for command execution
+        self.process_manager = ProcessManager()
+        self.process_manager.output_received.connect(self.update_output)
+        self.process_manager.process_finished.connect(self.on_process_finished)
+        
+        # Create detachable output window
+        self.output_window = OutputWindow(self)
         
     def load_config(self, config_file):
         """Load configuration from YAML file"""
@@ -39,12 +144,27 @@ class MenuApplication(QMainWindow):
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(20, 20, 20, 20)
         
+        # Default window width
+        window_width = 500
+        
         # Logo at the top
         logo_path = self.config.get('logo', '')
         if logo_path and os.path.exists(logo_path):
             logo_label = QLabel()
             pixmap = QPixmap(logo_path)
-            logo_label.setPixmap(pixmap.scaled(300, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            
+            # Check if logo_size is specified in the config
+            logo_size = self.config.get('logo_size', '300x100')
+            try:
+                width, height = map(int, logo_size.split('x'))
+                # Update window width to be at least 100px wider than logo
+                window_width = max(window_width, width + 100)
+            except (ValueError, AttributeError):
+                # Default to 300x100 if parsing fails
+                width, height = 300, 100
+                window_width = max(window_width, width + 100)
+                
+            logo_label.setPixmap(pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             logo_label.setAlignment(Qt.AlignCenter)
             main_layout.addWidget(logo_label)
             
@@ -66,16 +186,28 @@ class MenuApplication(QMainWindow):
         self.stacked_widget = QStackedWidget()
         main_layout.addWidget(self.stacked_widget)
         
-        # Create main menu page
+        # Create main menu page with multi-column support
         main_menu_widget = QWidget()
-        main_menu_layout = QVBoxLayout(main_menu_widget)
-        main_menu_layout.setSpacing(10)
+        
+        # Get number of columns from config (default to 1)
+        num_columns = self.config.get('num_columns', 1)
+        
+        # Create layout based on number of columns
+        if num_columns > 1:
+            main_menu_layout = QGridLayout(main_menu_widget)
+            main_menu_layout.setSpacing(10)
+        else:
+            main_menu_layout = QVBoxLayout(main_menu_widget)
+            main_menu_layout.setSpacing(10)
         
         # Create the main menu page first
         self.stacked_widget.addWidget(main_menu_widget)
         
         # Add buttons for each separator
         menu_items = self.config.get('menu_items', [])
+        
+        # Track items in each column
+        column_items = {i+1: 0 for i in range(num_columns)}
         
         for i, separator in enumerate(menu_items):
             separator_name = separator.get('name', f'Menu {i+1}')
@@ -107,12 +239,22 @@ class MenuApplication(QMainWindow):
             separator_button.clicked.connect(lambda checked, idx=page_index: 
                                            self.stacked_widget.setCurrentIndex(idx))
             
-            main_menu_layout.addWidget(separator_button)
+            # Get column for this menu item (default to 1)
+            column = separator.get('column', 1)
+            
+            # Ensure column is valid
+            if column < 1 or column > num_columns:
+                column = 1
+                
+            # Add button to the appropriate column
+            if num_columns > 1:
+                row = column_items[column]
+                main_menu_layout.addWidget(separator_button, row, column-1)
+                column_items[column] += 1
+            else:
+                main_menu_layout.addWidget(separator_button)
         
-        # Add some spacing before exit button
-        main_menu_layout.addStretch()
-        
-        # Add exit button to the main menu
+        # Add exit button at the bottom, spanning all columns if using grid layout
         exit_button = QPushButton("Exit Application")
         exit_button.setMinimumHeight(50)
         exit_button.setStyleSheet("""
@@ -131,46 +273,142 @@ class MenuApplication(QMainWindow):
             }
         """)
         exit_button.clicked.connect(self.close)
-        main_menu_layout.addWidget(exit_button)
         
-        # Output text area at the bottom
-        self.output_text = QTextEdit()
-        self.output_text.setReadOnly(True)
-        self.output_text.setMinimumHeight(150)
-        self.output_text.setStyleSheet("background-color: #f0f0f0; border-radius: 5px; padding: 10px;")
-        main_layout.addWidget(QLabel("Command Output:"))
-        main_layout.addWidget(self.output_text)
+        if num_columns > 1:
+            # Add some empty space
+            for col in range(num_columns):
+                main_menu_layout.setColumnStretch(col, 1)
+                
+            # Add spacer rows
+            max_rows = max(column_items.values()) if column_items else 0
+            spacer_row = QWidget()
+            main_menu_layout.addWidget(spacer_row, max_rows, 0, 1, num_columns)
+            main_menu_layout.setRowStretch(max_rows, 1)
+            
+            # Add exit button spanning all columns
+            main_menu_layout.addWidget(exit_button, max_rows + 1, 0, 1, num_columns)
+        else:
+            main_menu_layout.addStretch()
+            main_menu_layout.addWidget(exit_button)
+        
+        # Create bottom frame for output area with title and controls
+        output_frame = QFrame()
+        output_frame.setFrameShape(QFrame.StyledPanel)
+        output_frame.setStyleSheet("background-color: #f8f8f8; border-radius: 5px;")
+        output_layout = QVBoxLayout(output_frame)
+        
+        # Output header with title and detach button
+        output_header = QWidget()
+        header_layout = QHBoxLayout(output_header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        output_title = QLabel("Command Output:")
+        output_title.setFont(QFont("", 10, QFont.Bold))
+        header_layout.addWidget(output_title)
+        
+        header_layout.addStretch()
+        
+        # Add detach button
+        detach_button = QPushButton("Detach Output")
+        detach_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f0ad4e;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ec971f;
+            }
+        """)
+        detach_button.clicked.connect(self.detach_output_window)
+        header_layout.addWidget(detach_button)
+        
+        # Add clear button
+        clear_button = QPushButton("Clear")
+        clear_button.setStyleSheet("""
+            QPushButton {
+                background-color: #d9534f;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #c9302c;
+            }
+        """)
+        clear_button.clicked.connect(self.clear_output)
+        header_layout.addWidget(clear_button)
+        
+        output_layout.addWidget(output_header)
+        
+        # Output text area
+        self.output_text = OutputTerminal()
+        output_layout.addWidget(self.output_text)
+        
+        main_layout.addWidget(output_frame)
         
         # Set the main widget
         self.setCentralWidget(main_widget)
         
-        # Set window size
-        self.resize(500, 700)
-        self.setMinimumWidth(400)
+        # Set window size based on logo width plus 100px margin
+        # If we have multiple columns, increase the width further
+        if num_columns > 1:
+            window_width = max(window_width, 250 * num_columns + 100)
+            
+        self.resize(window_width, 700)
+        self.setMinimumWidth(window_width)
         
         # Set initial page
         self.stacked_widget.setCurrentIndex(0)
     
     def create_submenu_page(self, separator):
-        """Create a page for the submenu items"""
+        """Create a page for the submenu items with column support"""
         page_widget = QWidget()
         page_layout = QVBoxLayout(page_widget)
         page_layout.setSpacing(10)
         
-        # Add title for the submenu
+        # Add title for the submenu with MUCH LARGER and BOLDER font
         submenu_title = QLabel(separator.get('name', 'Submenu'))
         title_font = QFont()
-        title_font.setPointSize(14)
+        title_font.setPointSize(24)  # Much larger font size
         title_font.setBold(True)
+        title_font.setWeight(99)  # Maximum boldness (normal is 50, bold is 75)
         submenu_title.setFont(title_font)
         submenu_title.setAlignment(Qt.AlignCenter)
+        
+        # No color styling, just bold and large
         page_layout.addWidget(submenu_title)
         
-        # Add a line separator
+        # Add some spacing after title
+        spacer_after_title = QWidget()
+        spacer_after_title.setFixedHeight(15)
+        page_layout.addWidget(spacer_after_title)
+        
+        # Add a simple line separator
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
         line.setFrameShadow(QFrame.Sunken)
         page_layout.addWidget(line)
+        
+        # Create widget for submenu buttons
+        submenu_buttons_widget = QWidget()
+        
+        # Get number of columns for this submenu (default to 1)
+        submenu_columns = separator.get('submenu_columns', 1)
+        
+        # Create layout based on number of columns
+        if submenu_columns > 1:
+            submenu_buttons_layout = QGridLayout(submenu_buttons_widget)
+            submenu_buttons_layout.setSpacing(10)
+        else:
+            submenu_buttons_layout = QVBoxLayout(submenu_buttons_widget)
+            submenu_buttons_layout.setSpacing(10)
+        
+        # Track items in each column
+        column_items = {i+1: 0 for i in range(submenu_columns)}
         
         # Add buttons for each item in the submenu
         items = separator.get('items', [])
@@ -203,7 +441,30 @@ class MenuApplication(QMainWindow):
                 # Connect button to execute command
                 item_button.clicked.connect(lambda checked, cmd=command: self.execute_command(cmd))
                 
-                page_layout.addWidget(item_button)
+                # Get column for this item (default to 1)
+                column = item.get('column', 1)
+                
+                # Ensure column is valid
+                if column < 1 or column > submenu_columns:
+                    column = 1
+                
+                # Add button to the appropriate column
+                if submenu_columns > 1:
+                    row = column_items[column]
+                    submenu_buttons_layout.addWidget(item_button, row, column-1)
+                    column_items[column] += 1
+                else:
+                    submenu_buttons_layout.addWidget(item_button)
+        
+        # Add column stretching if using grid layout
+        if submenu_columns > 1:
+            for col in range(submenu_columns):
+                submenu_buttons_layout.setColumnStretch(col, 1)
+        else:
+            submenu_buttons_layout.addStretch()
+            
+        # Add the submenu buttons widget to the page layout
+        page_layout.addWidget(submenu_buttons_widget)
         
         # Add spacing between buttons and back button
         page_layout.addStretch()
@@ -236,12 +497,42 @@ class MenuApplication(QMainWindow):
         self.stacked_widget.setCurrentIndex(0)
     
     def execute_command(self, command):
-        """Execute the command and show output in the text area"""
-        try:
-            output = subprocess.check_output(command, shell=True, universal_newlines=True)
-            self.output_text.setHtml(f"<pre style='color: #333333;'>{output}</pre>")
-        except subprocess.CalledProcessError as e:
-            self.output_text.setHtml(f"<pre style='color: #cc0000;'>Command failed with error code {e.returncode}:\n{e.output}</pre>")
+        """Execute the command and show output in real-time"""
+        # Clear output areas
+        self.output_text.clear()
+        self.output_window.output_terminal.clear()
+        
+        # Display command that is being executed
+        cmd_display = f"Executing: {command}\n{'-' * 50}\n"
+        self.output_text.append_output(cmd_display)
+        self.output_window.output_terminal.append_output(cmd_display)
+        
+        # Execute the command
+        self.process_manager.execute_command(command)
+    
+    def update_output(self, text, is_error):
+        """Update both output terminals with new text"""
+        self.output_text.append_output(text, is_error)
+        self.output_window.output_terminal.append_output(text, is_error)
+    
+    def on_process_finished(self, exit_code, exit_status):
+        """Handle process completion"""
+        status_text = f"\n{'-' * 50}\nCommand finished with exit code: {exit_code}\n"
+        if exit_code != 0:
+            self.update_output(status_text, True)  # Show in red for non-zero exit
+        else:
+            self.update_output(status_text, False)
+    
+    def detach_output_window(self):
+        """Show the detached output window"""
+        self.output_window.show()
+        self.output_window.raise_()
+        self.output_window.activateWindow()
+    
+    def clear_output(self):
+        """Clear both output terminals"""
+        self.output_text.clear()
+        self.output_window.output_terminal.clear()
 
 
 if __name__ == "__main__":
