@@ -109,13 +109,35 @@ class OutputWindow(QDialog):
         
         # Add input field
         input_layout = QHBoxLayout()
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(5)
         
         input_label = QLabel("Input:")
         input_label.setFixedWidth(50)
+        input_label.setStyleSheet("""
+            QLabel {
+                color: #333333;
+                font-weight: bold;
+                padding: 5px;
+            }
+        """)
         input_layout.addWidget(input_label)
         
         self.input_field = QLineEdit()
-        self.input_field.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 3px; padding: 5px;")
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                color: #333333;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+                padding: 5px;
+                font-family: monospace;
+            }
+            QLineEdit:disabled {
+                background-color: #f0f0f0;
+                color: #666666;
+            }
+        """)
         self.input_field.returnPressed.connect(self.send_input)
         input_layout.addWidget(self.input_field)
         
@@ -406,10 +428,30 @@ class MenuApplication(QMainWindow):
         
         input_label = QLabel("Input:")
         input_label.setFixedWidth(50)
+        input_label.setStyleSheet("""
+            QLabel {
+                color: #333333;
+                font-weight: bold;
+                padding: 5px;
+            }
+        """)
         input_layout.addWidget(input_label)
         
         self.input_field = QLineEdit()
-        self.input_field.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 3px; padding: 5px;")
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                color: #333333;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+                padding: 5px;
+                font-family: monospace;
+            }
+            QLineEdit:disabled {
+                background-color: #f0f0f0;
+                color: #666666;
+            }
+        """)
         self.input_field.returnPressed.connect(self.send_input)
         self.input_field.setEnabled(False)  # Initially disabled
         input_layout.addWidget(self.input_field)

@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# Ask for the user's name
-read -p "What is your name? " name
+# Explicitly print prompt to stdout without a newline
+echo -n "What is your name? "
+
+# Use plain read to get input
+read name
+
 
 # Print the greeting
 echo "Hello, $name."
