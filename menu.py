@@ -4,7 +4,7 @@ import yaml
 import subprocess
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
                             QWidget, QLabel, QTextEdit, QFrame, QStackedWidget,
-                            QHBoxLayout, QGridLayout, QDialog, QSplitter)
+                            QHBoxLayout, QGridLayout, QDialog, QSplitter, QLineEdit)
 from PyQt5.QtGui import QIcon, QPixmap, QFont
 from PyQt5.QtCore import Qt, QProcess, pyqtSignal, QObject
 
@@ -47,6 +47,7 @@ class ProcessManager(QObject):
     """Manages command execution and emits output signals"""
     output_received = pyqtSignal(str, bool)  # text, is_error
     process_finished = pyqtSignal(int, QProcess.ExitStatus)  # exit code, exit status
+    process_started = pyqtSignal()  # Signal when process starts
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,6 +55,7 @@ class ProcessManager(QObject):
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyReadStandardError.connect(self.handle_stderr)
         self.process.finished.connect(self.process_finished)
+        self.process.started.connect(self.process_started)
     
     def execute_command(self, command):
         """Execute a shell command"""
@@ -75,9 +77,25 @@ class ProcessManager(QObject):
         data = self.process.readAllStandardError().data().decode('utf-8', errors='replace')
         if data:
             self.output_received.emit(data, True)
+    
+    def send_input(self, text):
+        """Send input to the running process"""
+        if self.process.state() == QProcess.Running:
+            # Add newline if not present
+            if not text.endswith('\n'):
+                text += '\n'
+            self.process.write(text.encode('utf-8'))
+            return True
+        return False
+    
+    def is_running(self):
+        """Check if process is running"""
+        return self.process.state() == QProcess.Running
 
 class OutputWindow(QDialog):
     """Detachable window for command output"""
+    input_sent = pyqtSignal(str)  # Signal when user sends input
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Command Output")
@@ -88,6 +106,25 @@ class OutputWindow(QDialog):
         # Output terminal
         self.output_terminal = OutputTerminal()
         layout.addWidget(self.output_terminal)
+        
+        # Add input field
+        input_layout = QHBoxLayout()
+        
+        input_label = QLabel("Input:")
+        input_label.setFixedWidth(50)
+        input_layout.addWidget(input_label)
+        
+        self.input_field = QLineEdit()
+        self.input_field.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 3px; padding: 5px;")
+        self.input_field.returnPressed.connect(self.send_input)
+        input_layout.addWidget(self.input_field)
+        
+        self.send_button = QPushButton("Send")
+        self.send_button.clicked.connect(self.send_input)
+        self.send_button.setEnabled(False)  # Initially disabled
+        input_layout.addWidget(self.send_button)
+        
+        layout.addLayout(input_layout)
         
         # Create buttons for the dialog
         button_layout = QHBoxLayout()
@@ -103,6 +140,20 @@ class OutputWindow(QDialog):
         button_layout.addWidget(self.close_button)
         
         layout.addLayout(button_layout)
+    
+    def send_input(self):
+        """Send input from the input field"""
+        text = self.input_field.text()
+        if text:
+            self.input_sent.emit(text)
+            # Display the input in the terminal (user feedback)
+            self.output_terminal.append_output(f"> {text}\n", False)
+            self.input_field.clear()
+    
+    def set_input_enabled(self, enabled):
+        """Enable or disable the input controls"""
+        self.input_field.setEnabled(enabled)
+        self.send_button.setEnabled(enabled)
 
 class MenuApplication(QMainWindow):
     def __init__(self, config_file):
@@ -114,9 +165,11 @@ class MenuApplication(QMainWindow):
         self.process_manager = ProcessManager()
         self.process_manager.output_received.connect(self.update_output)
         self.process_manager.process_finished.connect(self.on_process_finished)
+        self.process_manager.process_started.connect(self.on_process_started)
         
         # Create detachable output window
         self.output_window = OutputWindow(self)
+        self.output_window.input_sent.connect(self.send_process_input)
         
     def load_config(self, config_file):
         """Load configuration from YAML file"""
@@ -348,6 +401,26 @@ class MenuApplication(QMainWindow):
         self.output_text = OutputTerminal()
         output_layout.addWidget(self.output_text)
         
+        # Add input field to main window
+        input_layout = QHBoxLayout()
+        
+        input_label = QLabel("Input:")
+        input_label.setFixedWidth(50)
+        input_layout.addWidget(input_label)
+        
+        self.input_field = QLineEdit()
+        self.input_field.setStyleSheet("background-color: white; border: 1px solid #ccc; border-radius: 3px; padding: 5px;")
+        self.input_field.returnPressed.connect(self.send_input)
+        self.input_field.setEnabled(False)  # Initially disabled
+        input_layout.addWidget(self.input_field)
+        
+        self.send_button = QPushButton("Send")
+        self.send_button.clicked.connect(self.send_input)
+        self.send_button.setEnabled(False)  # Initially disabled
+        input_layout.addWidget(self.send_button)
+        
+        output_layout.addLayout(input_layout)
+        
         main_layout.addWidget(output_frame)
         
         # Set the main widget
@@ -515,6 +588,12 @@ class MenuApplication(QMainWindow):
         self.output_text.append_output(text, is_error)
         self.output_window.output_terminal.append_output(text, is_error)
     
+    def on_process_started(self):
+        """Enable input fields when process starts"""
+        self.input_field.setEnabled(True)
+        self.send_button.setEnabled(True)
+        self.output_window.set_input_enabled(True)
+    
     def on_process_finished(self, exit_code, exit_status):
         """Handle process completion"""
         status_text = f"\n{'-' * 50}\nCommand finished with exit code: {exit_code}\n"
@@ -522,12 +601,39 @@ class MenuApplication(QMainWindow):
             self.update_output(status_text, True)  # Show in red for non-zero exit
         else:
             self.update_output(status_text, False)
+        
+        # Disable input fields when process finishes
+        self.input_field.setEnabled(False)
+        self.send_button.setEnabled(False)
+        self.output_window.set_input_enabled(False)
+    
+    def send_input(self):
+        """Send input from the main window's input field"""
+        text = self.input_field.text()
+        if text and self.process_manager.is_running():
+            # Display the input in both terminals (user feedback)
+            self.output_text.append_output(f"> {text}\n", False)
+            self.output_window.output_terminal.append_output(f"> {text}\n", False)
+            
+            # Send to process
+            self.process_manager.send_input(text)
+            self.input_field.clear()
+    
+    def send_process_input(self, text):
+        """Send input from the detached output window"""
+        if self.process_manager.is_running():
+            # Send to process (the output window already shows the input)
+            self.output_text.append_output(f"> {text}\n", False)  # Show in main window too
+            self.process_manager.send_input(text)
     
     def detach_output_window(self):
         """Show the detached output window"""
         self.output_window.show()
         self.output_window.raise_()
         self.output_window.activateWindow()
+        
+        # Keep input field enabled state synchronized
+        self.output_window.set_input_enabled(self.process_manager.is_running())
     
     def clear_output(self):
         """Clear both output terminals"""

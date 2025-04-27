@@ -49,5 +49,5 @@ menu_items:
     column: 2  # This menu item will be in the second column
     items:
       - name: Fix Workstation MTU
-        command: echo "Fixes Workstation MTU"
+        command: ./greeting.sh
       # Items without column specified default to column 1
