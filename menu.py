@@ -473,7 +473,7 @@ class MenuApplication(QMainWindow):
         if num_columns > 1:
             window_width = max(window_width, 250 * num_columns + 100)
             
-        self.resize(window_width, 700)
+        self.resize(window_width, 900)
         self.setMinimumWidth(window_width)
         
         # Set initial page
