@@ -289,6 +289,12 @@ class MenuApplication(QMainWindow):
             separator_button = QPushButton(separator_name)
             separator_button.setMinimumHeight(50)
             
+            # Add tooltip if button_info is provided
+            button_info = separator.get('button_info', '')
+            if button_info:
+                separator_button.setToolTip(button_info.strip())  # Strip whitespace
+                separator_button.setToolTipDuration(5000)  # Show for 5 seconds
+            
             # Style the button
             separator_button.setStyleSheet("""
                 QPushButton {
@@ -534,6 +540,12 @@ class MenuApplication(QMainWindow):
             if item_name and command:
                 item_button = QPushButton(item_name)
                 item_button.setMinimumHeight(40)
+                
+                # Add tooltip if button_info is provided
+                button_info = item.get('button_info', '')
+                if button_info:
+                    item_button.setToolTip(button_info.strip())  # Strip whitespace
+                    item_button.setToolTipDuration(5000)  # Show for 5 seconds
                 
                 # Style the button - using blue style like main menu buttons
                 item_button.setStyleSheet("""
