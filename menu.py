@@ -257,6 +257,36 @@ class MenuApplication(QMainWindow):
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
         
+        # Add help button in top right corner
+        help_button = QPushButton("Help")
+        help_button.setStyleSheet("""
+            QPushButton {
+                background-color: #5bc0de;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #46b8da;
+            }
+        """)
+        help_button.setFixedWidth(80)
+        help_button.setFixedHeight(30)
+        
+        # Get help command from config
+        help_command = self.config.get('menu_help', '')
+        if help_command:
+            help_button.clicked.connect(lambda: self.execute_command(help_command))
+        else:
+            help_button.setEnabled(False)
+        
+        # Create a horizontal layout for the title and help button
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(help_button)
+        main_layout.addLayout(title_layout)
+        
         # Create stacked widget for main content and submenus
         self.stacked_widget = QStackedWidget()
         main_layout.addWidget(self.stacked_widget)
