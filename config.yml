@@ -2,6 +2,7 @@ icon: smallicon.png
 logo: logo.png
 logo_size: 320x240 # Specify width x height in pixels
 menu_title: RHCI Foundation Instructor Toolkit
+menu_help: echo "This is a help message"
 num_columns: 2  # Define number of columns for the main menu
 
 menu_items:
