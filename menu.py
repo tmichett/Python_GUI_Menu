@@ -7,13 +7,27 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout
                             QHBoxLayout, QGridLayout, QDialog, QSplitter, QLineEdit)
 from PyQt5.QtGui import QIcon, QPixmap, QFont
 from PyQt5.QtCore import Qt, QProcess, pyqtSignal, QObject
+from font_manager import get_font_manager
 
 class OutputTerminal(QTextEdit):
     """Custom QTextEdit that formats and displays terminal output"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setReadOnly(True)
-        self.setStyleSheet("background-color: #f0f0f0; border-radius: 5px; padding: 10px; font-family: monospace;")
+        
+        # Get the best monospace font for this system
+        font_manager = get_font_manager()
+        monospace_css = font_manager.get_monospace_font_css()
+        
+        self.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: #f0f0f0;
+                border-radius: 5px;
+                padding: 10px;
+                {monospace_css}
+                font-size: 12px;
+            }}
+        """)
         self.document().setMaximumBlockCount(5000)  # Limit to prevent memory issues
     
     def append_output(self, text, error=False):
@@ -124,19 +138,25 @@ class OutputWindow(QDialog):
         input_layout.addWidget(input_label)
         
         self.input_field = QLineEdit()
-        self.input_field.setStyleSheet("""
-            QLineEdit {
+        
+        # Get monospace font for input field
+        font_manager = get_font_manager()
+        monospace_css = font_manager.get_monospace_font_css()
+        
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
                 background-color: white;
                 color: #333333;
                 border: 1px solid #ccc;
                 border-radius: 3px;
                 padding: 5px;
-                font-family: monospace;
-            }
-            QLineEdit:disabled {
+                {monospace_css}
+                font-size: 12px;
+            }}
+            QLineEdit:disabled {{
                 background-color: #f0f0f0;
                 color: #666666;
-            }
+            }}
         """)
         self.input_field.returnPressed.connect(self.send_input)
         input_layout.addWidget(self.input_field)
@@ -474,19 +494,25 @@ class MenuApplication(QMainWindow):
         input_layout.addWidget(input_label)
         
         self.input_field = QLineEdit()
-        self.input_field.setStyleSheet("""
-            QLineEdit {
+        
+        # Get monospace font for main window input field
+        font_manager = get_font_manager()
+        monospace_css = font_manager.get_monospace_font_css()
+        
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
                 background-color: white;
                 color: #333333;
                 border: 1px solid #ccc;
                 border-radius: 3px;
                 padding: 5px;
-                font-family: monospace;
-            }
-            QLineEdit:disabled {
+                {monospace_css}
+                font-size: 12px;
+            }}
+            QLineEdit:disabled {{
                 background-color: #f0f0f0;
                 color: #666666;
-            }
+            }}
         """)
         self.input_field.returnPressed.connect(self.send_input)
         self.input_field.setEnabled(False)  # Initially disabled

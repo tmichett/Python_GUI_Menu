@@ -1,4 +1,5 @@
 #!/bin/bash
-cd /opt/Fedora_Remix_Tools
+cd /Users/travis/Github/Python_GUI_Menu
+source menu_venv/bin/activate
 python menu.py &
 exit

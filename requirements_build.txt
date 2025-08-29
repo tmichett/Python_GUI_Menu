@@ -1,0 +1,6 @@
+# Build requirements for Python GUI Menu Application
+# These are only needed for building the executable, not for running it
+
+PyInstaller>=6.0.0
+PyQt5>=5.15.0
+PyYAML>=6.0
