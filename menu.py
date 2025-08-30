@@ -759,6 +759,16 @@ if __name__ == "__main__":
     # Allow passing config file as argument
     if len(sys.argv) > 1:
         config_file = sys.argv[1]
+    else:
+        # If no config file specified, look in the same directory as the executable
+        if getattr(sys, 'frozen', False):
+            # If the application is run as a bundle
+            application_path = os.path.dirname(sys.executable)
+        else:
+            # If the application is run from a Python interpreter
+            application_path = os.path.dirname(os.path.abspath(__file__))
+            
+        config_file = os.path.join(application_path, "config.yml")
     
     app = QApplication(sys.argv)
     window = MenuApplication(config_file)
