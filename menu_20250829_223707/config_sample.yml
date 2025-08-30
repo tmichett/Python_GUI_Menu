@@ -1,0 +1,26 @@
+# Sample configuration for Python GUI Menu
+# Copy this to config.yml and modify as needed
+
+icon: smallicon.png
+logo: logo.png
+logo_size: 320x240
+menu_title: My Custom Menu
+menu_help: echo "This is a help message"
+num_columns: 1
+
+menu_items:
+  - name: System Commands
+    items:
+      - name: List Directory
+        command: ls -la
+      - name: Current Date
+        command: date
+      - name: System Info
+        command: uname -a
+        
+  - name: File Operations
+    items:
+      - name: Create Test File
+        command: echo "Hello World" > test.txt
+      - name: Show Test File
+        command: cat test.txt

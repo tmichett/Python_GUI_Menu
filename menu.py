@@ -32,6 +32,7 @@ class OutputTerminal(QTextEdit):
     
     def append_output(self, text, error=False):
         """Append text to the terminal with appropriate formatting"""
+        
         # Process text to handle newlines properly
         color = "#cc0000" if error else "#333333"
         
@@ -495,7 +496,7 @@ class MenuApplication(QMainWindow):
         
         self.input_field = QLineEdit()
         
-        # Get monospace font for main window input field
+        # Get monospace font for input field
         font_manager = get_font_manager()
         monospace_css = font_manager.get_monospace_font_css()
         
