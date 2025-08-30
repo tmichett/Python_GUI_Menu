@@ -66,28 +66,16 @@ setup_qt_environment() {
             print_status "Setting up Qt for Wayland environment"
             
             # Try different Wayland platform options in order of preference
-            local wayland_plugins=("wayland" "wayland-egl" "wayland-xcomposite-egl")
+            local wayland_plugins=("wayland-egl" "wayland" "wayland-xcomposite-egl")
             
-            for plugin in "${wayland_plugins[@]}"; do
-                if check_qt_plugin "$plugin"; then
-                    export QT_QPA_PLATFORM="$plugin"
-                    print_success "Using Qt platform plugin: $plugin"
-                    break
-                fi
-            done
-            
-            # If no Wayland plugin found, try xcb as fallback
-            if [ -z "$QT_QPA_PLATFORM" ]; then
-                print_warning "No Wayland plugins found, trying xcb fallback"
-                if check_qt_plugin "xcb"; then
-                    export QT_QPA_PLATFORM="xcb"
-                    print_success "Using Qt platform plugin: xcb (fallback)"
-                fi
-            fi
+            # First, try to force wayland-egl since it was available in the error
+            export QT_QPA_PLATFORM="wayland-egl"
+            print_status "Trying Qt platform plugin: wayland-egl (forced)"
             
             # Wayland-specific environment variables
             export QT_AUTO_SCREEN_SCALE_FACTOR=1
             export QT_WAYLAND_DISABLE_WINDOWDECORATION=0
+            export QTWEBENGINE_DISABLE_SANDBOX=1  # Sometimes needed for Qt apps
             ;;
             
         "x11")
@@ -177,51 +165,114 @@ run_with_diagnostics() {
     print_status "Starting application..."
 }
 
+# Function to detect if we're running from binary or source
+detect_runtime_mode() {
+    if [ -f "menu" ] && [ -x "menu" ]; then
+        echo "binary"
+    elif [ -f "menu.py" ] && [ -d "menu_venv" ]; then
+        echo "source"
+    else
+        echo "unknown"
+    fi
+}
+
 # Main execution
 main() {
     print_status "Python GUI Menu - Linux Compatibility Launcher"
-    print_status "Checking virtual environment..."
     
-    # Check if virtual environment exists
-    if [ ! -d "menu_venv" ]; then
-        print_error "Virtual environment not found. Please run the setup first."
-        exit 1
-    fi
+    # Detect what kind of setup we're running
+    local runtime_mode=$(detect_runtime_mode)
+    print_status "Detected runtime mode: $runtime_mode"
     
-    # Activate virtual environment
-    print_status "Activating virtual environment..."
-    source menu_venv/bin/activate
-    
-    # Check if Python application exists
-    if [ ! -f "menu.py" ]; then
-        print_error "menu.py not found in current directory"
-        exit 1
-    fi
-    
-    # Setup Qt environment
-    setup_qt_environment
-    
-    # Check if we need to show diagnostics
-    if [ "$1" = "--debug" ] || [ "$1" = "-d" ]; then
-        run_with_diagnostics
-    fi
-    
-    # Try to run the application
-    print_status "Launching Python GUI Menu..."
-    
-    # First attempt with current settings
-    if python menu.py "${@}" 2>/dev/null; then
-        print_success "Application started successfully"
-        exit 0
-    fi
+    case $runtime_mode in
+        "binary")
+            print_status "Running self-contained binary..."
+            
+            # For binary, we still need Qt environment setup but no Python/venv
+            setup_qt_environment
+            
+            # Check if we need to show diagnostics
+            if [ "$1" = "--debug" ] || [ "$1" = "-d" ]; then
+                run_with_diagnostics
+            fi
+            
+            print_status "Launching binary executable..."
+            
+            # First attempt with current settings
+            if ./menu "${@}" 2>/dev/null; then
+                print_success "Application started successfully"
+                exit 0
+            fi
+            ;;
+            
+        "source")
+            print_status "Running from Python source..."
+            print_status "Checking virtual environment..."
+            
+            # Check if virtual environment exists
+            if [ ! -d "menu_venv" ]; then
+                print_error "Virtual environment not found. Please run the setup first."
+                exit 1
+            fi
+            
+            # Activate virtual environment
+            print_status "Activating virtual environment..."
+            source menu_venv/bin/activate
+            
+            # Setup Qt environment
+            setup_qt_environment
+            
+            # Check if we need to show diagnostics
+            if [ "$1" = "--debug" ] || [ "$1" = "-d" ]; then
+                run_with_diagnostics
+            fi
+            
+            print_status "Launching Python application..."
+            
+            # First attempt with current settings
+            if python menu.py "${@}" 2>/dev/null; then
+                print_success "Application started successfully"
+                exit 0
+            fi
+            ;;
+            
+        *)
+            print_error "Cannot determine runtime mode:"
+            print_error "  Binary mode: Needs executable 'menu' file"  
+            print_error "  Source mode: Needs 'menu.py' and 'menu_venv/' directory"
+            print_error "  Current directory contents:"
+            ls -la
+            exit 1
+            ;;
+    esac
     
     # If first attempt failed, show diagnostics and try alternatives
     print_warning "Initial launch failed, trying alternative configurations..."
     
+    # Try different Wayland platforms
+    local fallback_platforms=("wayland" "wayland-xcomposite-egl" "xcb")
+    
+    # Determine the command to run based on runtime mode
+    local cmd_prefix=""
+    if [ "$runtime_mode" = "binary" ]; then
+        cmd_prefix="./menu"
+    else
+        cmd_prefix="python menu.py"
+    fi
+    
+    for platform in "${fallback_platforms[@]}"; do
+        print_status "Trying Qt platform: $platform"
+        export QT_QPA_PLATFORM="$platform"
+        if $cmd_prefix "${@}" 2>/dev/null; then
+            print_success "Application started with platform: $platform"
+            exit 0
+        fi
+    done
+    
     # Try with minimal platform (as last resort)
     export QT_QPA_PLATFORM="minimal"
     print_status "Trying minimal platform (headless mode)..."
-    if python menu.py "${@}" 2>/dev/null; then
+    if $cmd_prefix "${@}" 2>/dev/null; then
         print_success "Application started with minimal platform"
         exit 0
     fi
@@ -232,7 +283,7 @@ main() {
     
     # Reset to auto-detection and show full errors
     unset QT_QPA_PLATFORM
-    python menu.py "${@}"
+    $cmd_prefix "${@}"
     
     echo "----------------------------------------"
     print_error "Application failed to start."
