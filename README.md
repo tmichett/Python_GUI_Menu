@@ -73,8 +73,38 @@ Once built, users can:
 
 **No Python installation required on the target system!**
 
+## Linux Compatibility
+
+This application now includes enhanced Linux support for both **X11** and **Wayland** display servers:
+
+### Quick Start on Linux
+```bash
+# Cross-platform launcher (automatically detects environment)
+./run.sh
+
+# Linux-specific launcher with diagnostics
+./run_linux.sh --debug
+```
+
+### Supported Linux Distributions
+- ✅ RHEL 8+ (including Wayland)
+- ✅ Fedora 35+ (including Wayland) 
+- ✅ Ubuntu 22.04+ (including Wayland)
+- ✅ CentOS Stream
+- ✅ openSUSE
+- ✅ Arch Linux
+
+### Common Issues Fixed
+- **Qt platform plugin errors** on Wayland systems
+- **"Could not load the Qt platform plugin 'xcb'"** errors
+- **Font rendering issues** on Linux
+- **Cross-platform compatibility** between macOS and Linux
+
+See **[LINUX_COMPATIBILITY.md](LINUX_COMPATIBILITY.md)** for detailed troubleshooting.
+
 ## Documentation
 
 - **[BUILD.md](BUILD.md)**: Detailed build instructions and troubleshooting
-- **[FONT_FIX.md](FONT_FIX.md)**: Font management system and Qt warning fixes
+- **[FONT_FIX.md](FONT_FIX.md)**: Font management system and Qt warning fixes  
+- **[LINUX_COMPATIBILITY.md](LINUX_COMPATIBILITY.md)**: Linux and Wayland compatibility guide
 - **[config.yml](config.yml)**: Current configuration example

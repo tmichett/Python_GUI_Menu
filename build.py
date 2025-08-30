@@ -289,10 +289,13 @@ def create_distribution():
     shutil.copy2(exe_src, exe_dst)
     
     # Copy additional files
-    additional_files = ['config.yml', 'logo.png', 'smallicon.png', 'greeting.sh']
+    additional_files = ['config.yml', 'logo.png', 'smallicon.png', 'greeting.sh', 'run_linux.sh']
     for file_name in additional_files:
         if os.path.exists(file_name):
             shutil.copy2(file_name, package_dir / file_name)
+            # Make shell scripts executable
+            if file_name.endswith('.sh'):
+                os.chmod(package_dir / file_name, 0o755)
     
     # Create sample configuration
     sample_config = '''# Sample configuration for Python GUI Menu
@@ -365,7 +368,7 @@ For more information, see: https://github.com/your-repo/Python_GUI_Menu
     with open(package_dir / 'README.txt', 'w') as f:
         f.write(readme_content)
     
-    # Create run script
+    # Create platform-specific run scripts
     if platform.system() == 'Windows':
         run_script = f'''@echo off
 cd /d "%~dp0"
@@ -375,9 +378,14 @@ pause
         with open(package_dir / 'run.bat', 'w') as f:
             f.write(run_script)
     else:
+        # Create cross-platform run script for Unix-like systems
         run_script = f'''#!/bin/bash
+# Cross-platform run script for the executable
 cd "$(dirname "$0")"
-./{exe_name}
+
+# For the standalone executable, we don't need Qt platform detection
+# since PyInstaller bundles everything. Just run it directly.
+./{exe_name} "$@"
 '''
         run_path = package_dir / 'run.sh'
         with open(run_path, 'w') as f:
