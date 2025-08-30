@@ -39,16 +39,22 @@ python menu.py
 
 Create self-contained executables that don't require Python or virtual environments on the target system.
 
-### Quick Build (Recommended)
+### Quick Build Options
 
 ````bash
-# Cross-platform Python build script
-python build.py
+# Interactive build menu (recommended for first-time users)
+./build_menu.sh
 
-# Or use platform-specific scripts:
-./build.sh       # Unix/Linux/macOS
-build.bat        # Windows
+# Or choose your preferred method:
+./build.sh       # Bash script - proven, reliable (Linux/macOS)
+python build.py  # Python script - cross-platform, enhanced
+build.bat        # Windows batch script
 ````
+
+**Which build method should I use?**
+- **`./build_menu.sh`** - Interactive menu, great for first time
+- **`./build.sh`** - If you prefer the proven bash approach (Linux/macOS)
+- **`python build.py`** - If you want cross-platform compatibility
 
 ### Build Output
 

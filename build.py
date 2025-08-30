@@ -39,19 +39,26 @@ def print_warning(message):
 def print_error(message):
     print(f"{Colors.RED}[ERROR]{Colors.NC} {message}")
 
-def run_command(cmd, check=True, capture_output=False):
+def run_command(cmd, check=True, capture_output=False, timeout=300):
     """Run a command and handle errors"""
     try:
         if capture_output:
             result = subprocess.run(cmd, shell=True, check=check, 
-                                  capture_output=True, text=True)
+                                  capture_output=True, text=True, timeout=timeout)
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, shell=True, check=check)
+            print_status(f"Running: {cmd}")
+            result = subprocess.run(cmd, shell=True, check=check, timeout=timeout)
+            return True
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout}s: {cmd}")
+        return None if capture_output else False
     except subprocess.CalledProcessError as e:
         print_error(f"Command failed: {cmd}")
         if hasattr(e, 'stderr') and e.stderr:
             print_error(f"Error: {e.stderr}")
+        elif hasattr(e, 'output') and e.output:
+            print_error(f"Output: {e.output}")
         return None if capture_output else False
 
 def check_prerequisites():
@@ -106,14 +113,29 @@ def create_venv():
     """Create build virtual environment"""
     print_status("Creating build virtual environment...")
     
-    python_cmd = "python" if shutil.which("python") else "python3"
+    # Try python3 first, then python
+    python_cmd = "python3" if shutil.which("python3") else "python"
     
-    # Create virtual environment
-    if not run_command(f"{python_cmd} -m venv build_venv"):
+    print_status(f"Using Python command: {python_cmd}")
+    
+    # Create virtual environment with verbose output for debugging
+    cmd = f"{python_cmd} -m venv build_venv"
+    try:
+        result = subprocess.run(cmd, shell=True, check=True, 
+                              capture_output=True, text=True, timeout=60)
+        print_success("Build virtual environment created")
+        return True
+    except subprocess.TimeoutExpired:
+        print_error("Virtual environment creation timed out (60s)")
         return False
-    
-    print_success("Build virtual environment created")
-    return True
+    except subprocess.CalledProcessError as e:
+        print_error(f"Virtual environment creation failed: {e}")
+        if e.stderr:
+            print_error(f"Error details: {e.stderr}")
+        return False
+    except Exception as e:
+        print_error(f"Unexpected error creating virtual environment: {e}")
+        return False
 
 def get_venv_python():
     """Get the path to the virtual environment Python"""
@@ -128,12 +150,29 @@ def install_dependencies():
     
     venv_python = get_venv_python()
     
-    # Upgrade pip
-    if not run_command(f"{venv_python} -m pip install --upgrade pip"):
+    # Check if the virtual environment python exists
+    if not os.path.exists(venv_python):
+        print_error(f"Virtual environment Python not found: {venv_python}")
         return False
     
-    # Install requirements
-    if not run_command(f"{venv_python} -m pip install -r requirements_build.txt"):
+    print_status(f"Using virtual environment Python: {venv_python}")
+    
+    # Upgrade pip with timeout
+    print_status("Upgrading pip...")
+    if not run_command(f'"{venv_python}" -m pip install --upgrade pip'):
+        print_warning("pip upgrade failed, continuing anyway...")
+    
+    # Install requirements directly (not from file to avoid missing file issues)
+    print_status("Installing PyInstaller...")
+    if not run_command(f'"{venv_python}" -m pip install "PyInstaller>=6.0.0"'):
+        return False
+    
+    print_status("Installing PyQt5...")
+    if not run_command(f'"{venv_python}" -m pip install "PyQt5>=5.15.0"'):
+        return False
+        
+    print_status("Installing PyYAML...")
+    if not run_command(f'"{venv_python}" -m pip install "PyYAML>=6.0"'):
         return False
     
     print_success("Build dependencies installed")
