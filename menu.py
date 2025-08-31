@@ -2,11 +2,14 @@ import sys
 import os
 import yaml
 import subprocess
+import markdown
+import re
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
                             QWidget, QLabel, QTextEdit, QFrame, QStackedWidget,
-                            QHBoxLayout, QGridLayout, QDialog, QSplitter, QLineEdit)
-from PyQt5.QtGui import QIcon, QPixmap, QFont
-from PyQt5.QtCore import Qt, QProcess, pyqtSignal, QObject
+                            QHBoxLayout, QGridLayout, QDialog, QSplitter, QLineEdit,
+                            QTextBrowser, QListWidget, QListWidgetItem, QScrollArea)
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QDesktopServices
+from PyQt5.QtCore import Qt, QProcess, pyqtSignal, QObject, QUrl
 from font_manager import get_font_manager
 
 class OutputTerminal(QTextEdit):
@@ -198,6 +201,331 @@ class OutputWindow(QDialog):
         self.input_field.setEnabled(enabled)
         self.send_button.setEnabled(enabled)
 
+class HelpWindow(QDialog):
+    """Help window with markdown rendering and navigation"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.help_config = {}
+        self.current_document = None
+        self.help_base_path = ""
+        self.init_ui()
+        self.load_help_config()
+    
+    def init_ui(self):
+        """Initialize the help window UI"""
+        self.setWindowTitle("Application Help")
+        self.setMinimumSize(900, 700)
+        self.resize(1000, 800)
+        
+        # Main layout
+        main_layout = QHBoxLayout(self)
+        
+        # Left panel for table of contents
+        toc_frame = QFrame()
+        toc_frame.setFrameShape(QFrame.StyledPanel)
+        toc_frame.setMaximumWidth(250)
+        toc_frame.setMinimumWidth(200)
+        toc_layout = QVBoxLayout(toc_frame)
+        
+        # Table of contents title
+        toc_title = QLabel("Help Topics")
+        toc_title.setFont(QFont("", 12, QFont.Bold))
+        toc_title.setAlignment(Qt.AlignCenter)
+        toc_layout.addWidget(toc_title)
+        
+        # Table of contents list
+        self.toc_list = QListWidget()
+        self.toc_list.itemClicked.connect(self.on_topic_selected)
+        toc_layout.addWidget(self.toc_list)
+        
+        main_layout.addWidget(toc_frame)
+        
+        # Right panel for content
+        content_frame = QFrame()
+        content_frame.setFrameShape(QFrame.StyledPanel)
+        content_layout = QVBoxLayout(content_frame)
+        
+        # Content browser
+        self.content_browser = QTextBrowser()
+        self.content_browser.setOpenExternalLinks(True)
+        self.content_browser.anchorClicked.connect(self.handle_link_clicked)
+        
+        # Set up content browser styling
+        self.content_browser.setStyleSheet("""
+            QTextBrowser {
+                background-color: white;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        """)
+        
+        content_layout.addWidget(self.content_browser)
+        
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.close)
+        close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-weight: bold;
+                margin: 5px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        content_layout.addWidget(close_button)
+        
+        main_layout.addWidget(content_frame)
+        
+        # Set layout proportions
+        main_layout.setStretch(0, 0)  # TOC panel - fixed width
+        main_layout.setStretch(1, 1)  # Content panel - expandable
+    
+    def load_help_config(self):
+        """Load help configuration from help_config.yml"""
+        help_config_path = os.path.join("Docs", "help_config.yml")
+        self.help_base_path = os.path.dirname(help_config_path)
+        
+        try:
+            with open(help_config_path, 'r') as file:
+                self.help_config = yaml.safe_load(file) or {}
+            self.populate_toc()
+            self.load_default_help()
+        except Exception as e:
+            error_msg = f"<h2>Help System Error</h2><p>Could not load help configuration: {e}</p>"
+            error_msg += f"<p>Looking for: <code>{help_config_path}</code></p>"
+            self.content_browser.setHtml(error_msg)
+    
+    def populate_toc(self):
+        """Populate the table of contents from help_config"""
+        self.toc_list.clear()
+        
+        # Add main help document
+        default_doc = self.help_config.get('help_config', 'README.md')
+        main_item = QListWidgetItem("📖 Application Guide")
+        main_item.setData(Qt.UserRole, default_doc)
+        self.toc_list.addItem(main_item)
+        
+        # Add help topics
+        help_topics = self.help_config.get('help_topics', [])
+        for topic in help_topics:
+            topic_name = topic.get('topic', 'Unknown Topic')
+            document = topic.get('document', '')
+            if document:
+                item = QListWidgetItem(f"📄 {topic_name}")
+                item.setData(Qt.UserRole, document)
+                self.toc_list.addItem(item)
+    
+    def load_default_help(self):
+        """Load the default help document"""
+        default_doc = self.help_config.get('help_config', 'README.md')
+        self.load_document(default_doc)
+        
+        # Select the first item in the TOC
+        if self.toc_list.count() > 0:
+            self.toc_list.setCurrentRow(0)
+    
+    def on_topic_selected(self, item):
+        """Handle topic selection from table of contents"""
+        document_path = item.data(Qt.UserRole)
+        if document_path:
+            self.load_document(document_path)
+    
+    def load_document(self, document_path):
+        """Load and render a markdown document"""
+        try:
+            # Handle relative paths - if the path already starts with Docs/, don't add it again
+            if not os.path.isabs(document_path):
+                if document_path.startswith("Docs/"):
+                    full_path = document_path
+                else:
+                    full_path = os.path.join("Docs", document_path)
+            else:
+                full_path = document_path
+            
+            if not os.path.exists(full_path):
+                error_msg = f"<h2>Document Not Found</h2><p>Could not find document: <code>{full_path}</code></p>"
+                self.content_browser.setHtml(error_msg)
+                return
+            
+            with open(full_path, 'r', encoding='utf-8') as file:
+                markdown_content = file.read()
+            
+            # Convert markdown to HTML
+            html_content = self.markdown_to_html(markdown_content, os.path.dirname(full_path))
+            
+            # Set the HTML content
+            self.content_browser.setHtml(html_content)
+            self.current_document = full_path
+            
+        except Exception as e:
+            error_msg = f"<h2>Error Loading Document</h2><p>Failed to load {document_path}: {e}</p>"
+            self.content_browser.setHtml(error_msg)
+    
+    def markdown_to_html(self, markdown_content, base_path):
+        """Convert markdown to HTML with image and link processing"""
+        # Configure markdown with extensions
+        md = markdown.Markdown(extensions=['extra', 'codehilite', 'toc'])
+        
+        # Convert to HTML
+        html_content = md.convert(markdown_content)
+        
+        # Process images to use absolute paths
+        html_content = self.process_images(html_content, base_path)
+        
+        # Add CSS styling
+        styled_html = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: none;
+                    margin: 0;
+                    padding: 20px;
+                }}
+                h1, h2, h3, h4, h5, h6 {{
+                    color: #2c3e50;
+                    margin-top: 24px;
+                    margin-bottom: 16px;
+                }}
+                h1 {{
+                    border-bottom: 2px solid #eee;
+                    padding-bottom: 10px;
+                }}
+                h2 {{
+                    border-bottom: 1px solid #eee;
+                    padding-bottom: 8px;
+                }}
+                code {{
+                    background-color: #f8f9fa;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                }}
+                pre {{
+                    background-color: #f8f9fa;
+                    border: 1px solid #e9ecef;
+                    border-radius: 6px;
+                    padding: 16px;
+                    overflow-x: auto;
+                }}
+                pre code {{
+                    background-color: transparent;
+                    padding: 0;
+                }}
+                blockquote {{
+                    border-left: 4px solid #dfe2e5;
+                    padding: 0 16px;
+                    color: #6a737d;
+                    margin: 16px 0;
+                }}
+                table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin: 16px 0;
+                }}
+                th, td {{
+                    border: 1px solid #dfe2e5;
+                    padding: 8px 12px;
+                    text-align: left;
+                }}
+                th {{
+                    background-color: #f8f9fa;
+                    font-weight: 600;
+                }}
+                img {{
+                    max-width: 100%;
+                    height: auto;
+                    display: block;
+                    margin: 16px auto;
+                    border-radius: 6px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                }}
+                a {{
+                    color: #0366d6;
+                    text-decoration: none;
+                }}
+                a:hover {{
+                    text-decoration: underline;
+                }}
+                ul, ol {{
+                    margin: 16px 0;
+                    padding-left: 32px;
+                }}
+                li {{
+                    margin: 4px 0;
+                }}
+            </style>
+        </head>
+        <body>
+            {html_content}
+        </body>
+        </html>
+        """
+        
+        return styled_html
+    
+    def process_images(self, html_content, base_path):
+        """Process image tags to use absolute file paths"""
+        def replace_src(match):
+            src = match.group(1)
+            # If it's already an absolute path or URL, leave it
+            if os.path.isabs(src) or src.startswith(('http://', 'https://', 'file://')):
+                return match.group(0)
+            
+            # Convert relative path to absolute file URL
+            if src.startswith('../'):
+                # Handle paths like ../logo.png
+                abs_path = os.path.abspath(os.path.join(base_path, src))
+            else:
+                abs_path = os.path.abspath(os.path.join(base_path, src))
+            
+            if os.path.exists(abs_path):
+                file_url = f"file://{abs_path}"
+                return f'<img src="{file_url}"' + match.group(0)[match.group(0).find(' '):]
+            else:
+                # If file doesn't exist, keep original path but add a note
+                return f'<img src="{src}" alt="[Image not found: {src}]"' + match.group(0)[match.group(0).find(' '):]
+        
+        # Replace img src attributes
+        img_pattern = r'<img src="([^"]*)"'
+        html_content = re.sub(img_pattern, replace_src, html_content)
+        
+        return html_content
+    
+    def handle_link_clicked(self, url):
+        """Handle clicking on links in the help content"""
+        url_string = url.toString()
+        
+        # Handle file links (other help documents)
+        if url_string.startswith('file://') and url_string.endswith('.md'):
+            # Extract the file path and load it as a help document
+            file_path = url_string.replace('file://', '')
+            if os.path.exists(file_path):
+                self.load_document(file_path)
+            return
+        
+        # Handle external links
+        if url_string.startswith(('http://', 'https://')):
+            QDesktopServices.openUrl(url)
+            return
+        
+        # Handle relative links within the same document
+        if url_string.startswith('#'):
+            # Let the browser handle internal anchors
+            return
+
 class MenuApplication(QMainWindow):
     def __init__(self, config_file):
         super().__init__()
@@ -213,6 +541,9 @@ class MenuApplication(QMainWindow):
         # Create detachable output window
         self.output_window = OutputWindow(self)
         self.output_window.input_sent.connect(self.send_process_input)
+        
+        # Create help window
+        self.help_window = HelpWindow(self)
         
     def load_config(self, config_file):
         """Load configuration from YAML file"""
@@ -295,12 +626,8 @@ class MenuApplication(QMainWindow):
         help_button.setFixedWidth(80)
         help_button.setFixedHeight(30)
         
-        # Get help command from config
-        help_command = self.config.get('menu_help', '')
-        if help_command:
-            help_button.clicked.connect(lambda: self.execute_command(help_command))
-        else:
-            help_button.setEnabled(False)
+        # Connect help button to help window
+        help_button.clicked.connect(self.show_help)
         
         # Create a horizontal layout for the title and help button
         title_layout = QHBoxLayout()
@@ -750,6 +1077,12 @@ class MenuApplication(QMainWindow):
         """Clear both output terminals"""
         self.output_text.clear()
         self.output_window.output_terminal.clear()
+    
+    def show_help(self):
+        """Show the help window"""
+        self.help_window.show()
+        self.help_window.raise_()
+        self.help_window.activateWindow()
 
 
 if __name__ == "__main__":

@@ -174,6 +174,10 @@ def install_dependencies():
     print_status("Installing PyYAML...")
     if not run_command(f'"{venv_python}" -m pip install "PyYAML>=6.0"'):
         return False
+        
+    print_status("Installing markdown...")
+    if not run_command(f'"{venv_python}" -m pip install "markdown>=3.4.0"'):
+        return False
     
     print_success("Build dependencies installed")
     return True
@@ -238,6 +242,11 @@ a = Analysis(
         'PyQt5.QtWidgets',
         'PyQt5.QtGui',
         'yaml',
+        'markdown',
+        'markdown.extensions',
+        'markdown.extensions.extra',
+        'markdown.extensions.codehilite',
+        'markdown.extensions.toc',
     ],
     hookspath=[],
     hooksconfig={},
@@ -336,6 +345,13 @@ def create_distribution():
             if file_name.endswith('.sh'):
                 os.chmod(package_dir / file_name, 0o755)
     
+    # Copy Docs directory for help system
+    docs_src = Path('Docs')
+    if docs_src.exists():
+        docs_dst = package_dir / 'Docs'
+        shutil.copytree(docs_src, docs_dst)
+        print_status(f"Copied help documentation: {docs_src} -> {docs_dst}")
+    
     # Create sample configuration
     sample_config = '''# Sample configuration for Python GUI Menu
 # Copy this to config.yml and modify as needed
@@ -382,6 +398,7 @@ Files in this package:
 - logo.png: Logo image (if present)
 - smallicon.png: Window icon (if present)
 - greeting.sh: Sample script (if present)
+- Docs/: Help documentation and configuration (if present)
 
 To run:
 {"./" + exe_name if platform.system() != "Windows" else exe_name}

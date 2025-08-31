@@ -74,7 +74,7 @@ print_success "Build virtual environment created"
 # Upgrade pip and install build dependencies
 print_status "Installing build dependencies..."
 pip install --upgrade pip
-pip install pyinstaller PyQt5 PyYAML
+pip install pyinstaller PyQt5 PyYAML markdown
 print_success "Build dependencies installed"
 
 # Verify required files exist
@@ -136,6 +136,11 @@ a = Analysis(
         'PyQt5.QtWidgets',
         'PyQt5.QtGui',
         'yaml',
+        'markdown',
+        'markdown.extensions',
+        'markdown.extensions.extra',
+        'markdown.extensions.codehilite',
+        'markdown.extensions.toc',
     ],
     hookspath=[],
     hooksconfig={},
@@ -213,6 +218,12 @@ cp logo.png "$PACKAGE_DIR/" 2>/dev/null || true
 cp smallicon.png "$PACKAGE_DIR/" 2>/dev/null || true
 cp greeting.sh "$PACKAGE_DIR/" 2>/dev/null || true
 
+# Copy Docs directory for help system
+if [[ -d "Docs" ]]; then
+    cp -r Docs "$PACKAGE_DIR/"
+    print_status "Copied help documentation: Docs/ -> $PACKAGE_DIR/Docs/"
+fi
+
 # Create a sample configuration
 cat > "$PACKAGE_DIR/config_sample.yml" << 'EOF'
 # Sample configuration for Python GUI Menu
@@ -258,6 +269,7 @@ Files in this package:
 - logo.png: Logo image (if present)
 - smallicon.png: Window icon (if present)
 - greeting.sh: Sample script (if present)
+- Docs/: Help documentation and configuration (if present)
 
 To run:
 ./menu
