@@ -157,6 +157,7 @@ License:        MIT
 URL:            https://github.com/your-repo/Python_GUI_Menu
 Source0:        %{name}-%{version}.tar.gz
 
+BuildRequires:  python3-devel
 BuildRequires:  desktop-file-utils
 Requires:       qt5-qtbase-gui
 Requires:       qt5-qtwayland
