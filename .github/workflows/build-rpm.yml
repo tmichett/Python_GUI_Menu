@@ -114,6 +114,10 @@ jobs:
         CHANGELOG_DATE=$(date '+%a %b %d %Y')
         
         cat > ~/rpmbuild/SPECS/${APP_NAME}.spec << EOF
+        # Disable debug package generation since we're packaging a pre-built executable
+        %global _enable_debug_package 0
+        %global debug_package %{nil}
+        
         Name:           python-gui-menu
         Version:        %{getenv:RPM_VERSION}
         Release:        1%{?dist}

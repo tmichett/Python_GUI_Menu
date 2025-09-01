@@ -43,16 +43,19 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 
 - Replace python3-venv with python3-devel in dependencies
 - Fix changelog date generation in RPM spec file  
+- Disable debug package generation for pre-built executable
 - Update documentation with CentOS Stream 9 specifics
 - Add troubleshooting guide for common build issues
 
-Fixes GitHub Action build failure:
+Fixes GitHub Action build failures:
 - No match for argument: python3-venv
 - bad date in %changelog error
+- Empty %files file debugsourcefiles.list
 
 The venv module is built into python3 package in CentOS Stream 9,
 and python3-devel provides the development headers needed for
-PyInstaller and PyQt5 native extensions."
+PyInstaller and PyQt5 native extensions. Debug packages are
+disabled since we're packaging a pre-built PyInstaller executable."
     
     print_success "Changes committed successfully!"
     
@@ -80,6 +83,7 @@ print_status "Summary of fixes applied:"
 echo "✅ Removed python3-venv dependency (not available in CentOS Stream 9)"
 echo "✅ Added python3-devel dependency (provides development headers)"  
 echo "✅ Fixed changelog date generation in GitHub Action"
+echo "✅ Disabled debug package generation (not needed for pre-built executable)"
 echo "✅ Updated documentation and troubleshooting guide"
 echo ""
 print_success "Ready to test the build process!"

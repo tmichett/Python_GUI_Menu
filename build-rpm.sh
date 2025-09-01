@@ -148,6 +148,10 @@ create_spec_file() {
     print_status "Creating RPM spec file..."
     
     cat > ~/rpmbuild/SPECS/python-gui-menu.spec << EOF
+# Disable debug package generation since we're packaging a pre-built executable
+%global _enable_debug_package 0
+%global debug_package %{nil}
+
 Name:           python-gui-menu
 Version:        ${version}
 Release:        1%{?dist}

@@ -225,6 +225,15 @@ All runtime dependencies are automatically installed with the RPM.
    sudo dnf install desktop-file-utils
    ```
 
+5. **"Empty %files file debugsourcefiles.list"**
+   - This occurs when RPM tries to create debug packages for a pre-built executable
+   - The fix is already included in the spec files (debug packages disabled)
+   - If you see this in custom builds, add to your spec file:
+   ```rpm
+   %global _enable_debug_package 0
+   %global debug_package %{nil}
+   ```
+
 ### Runtime Issues
 
 1. **"Cannot find Qt platform plugin"**

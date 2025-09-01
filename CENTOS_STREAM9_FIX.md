@@ -54,6 +54,23 @@ python3-devel \
 | Ubuntu/Debian | `python3-venv` | `python3-dev` |
 | Fedora | Built into `python3` | `python3-devel` |
 
+## Additional Issue: Debug Package Generation
+
+### Problem
+```
+error: Empty %files file /github/home/rpmbuild/BUILD/python-gui-menu-1.0.2/debugsourcefiles.list
+```
+
+### Root Cause
+RPM was trying to create debug packages for debugging information, but since we're packaging a pre-built PyInstaller executable (not compiling from source), there are no debug source files to include.
+
+### Fix Applied
+Added debug package disabling directives to the RPM spec file:
+```rpm
+%global _enable_debug_package 0
+%global debug_package %{nil}
+```
+
 ## Verification
 
 After applying this fix, the GitHub Action should:
@@ -61,7 +78,7 @@ After applying this fix, the GitHub Action should:
 1. ✅ Successfully install all system dependencies
 2. ✅ Create virtual environment using `python3 -m venv`
 3. ✅ Build the application using PyInstaller
-4. ✅ Create RPM package successfully
+4. ✅ Create RPM package successfully (no debug package errors)
 5. ✅ Pass installation tests
 
 ## Testing the Fix
