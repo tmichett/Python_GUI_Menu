@@ -55,12 +55,16 @@ After a successful build:
 On CentOS/RHEL/Fedora systems, install required packages:
 
 ```bash
-# For CentOS/RHEL 8+
-sudo dnf install rpm-build rpmdevtools python3 python3-pip python3-venv \
+# For CentOS Stream 9 / RHEL 9+ / Fedora
+sudo dnf install rpm-build rpmdevtools python3 python3-pip python3-devel \
+                 qt5-qtbase-devel desktop-file-utils
+
+# For CentOS/RHEL 8
+sudo dnf install rpm-build rpmdevtools python3 python3-pip python3-devel \
                  qt5-qtbase-devel desktop-file-utils
 
 # For older systems with yum
-sudo yum install rpm-build rpmdevtools python3 python3-pip \
+sudo yum install rpm-build rpmdevtools python3 python3-pip python3-devel \
                  qt5-qtbase-devel desktop-file-utils
 ```
 
@@ -181,7 +185,7 @@ This removes all installed files and cleans up desktop integration.
 ## Dependencies
 
 ### Build Dependencies
-- `python3`, `python3-pip`, `python3-venv`
+- `python3`, `python3-pip`, `python3-devel`
 - `qt5-qtbase-devel` 
 - `rpm-build`, `rpmdevtools`
 - `desktop-file-utils`
@@ -204,12 +208,19 @@ All runtime dependencies are automatically installed with the RPM.
    sudo dnf install rpm-build rpmdevtools
    ```
 
-2. **"PyQt5 installation failed"**
+2. **"No match for argument: python3-venv"**
+   - In CentOS Stream 9, `venv` is included in the base `python3` package
+   - Use `python3-devel` instead for development headers
    ```bash
-   sudo dnf install qt5-qtbase-devel python3-devel
+   sudo dnf install python3-devel
    ```
 
-3. **"Desktop file validation failed"**
+3. **"PyQt5 installation failed"**
+   ```bash
+   sudo dnf install qt5-qtbase-devel python3-devel gcc gcc-c++
+   ```
+
+4. **"Desktop file validation failed"**
    ```bash
    sudo dnf install desktop-file-utils
    ```
