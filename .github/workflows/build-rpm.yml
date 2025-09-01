@@ -1,0 +1,296 @@
+name: Build RPM Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+
+env:
+  APP_NAME: python-gui-menu
+  APP_VERSION: ${{ github.ref_name || inputs.release_tag || 'v1.0.0' }}
+
+jobs:
+  build-rpm:
+    name: Build RPM on CentOS Stream 9
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/centos/centos:stream9
+    
+    steps:
+    - name: Install system dependencies
+      run: |
+        dnf update -y
+        dnf install -y \
+          git \
+          python3 \
+          python3-pip \
+          python3-venv \
+          rpm-build \
+          rpmdevtools \
+          gcc \
+          gcc-c++ \
+          make \
+          qt5-qtbase-devel \
+          qt5-qtwayland \
+          libxcb-devel \
+          mesa-libGL-devel \
+          fontconfig-devel \
+          freetype-devel \
+          libX11-devel \
+          libXext-devel \
+          libXrender-devel \
+          which \
+          zip \
+          desktop-file-utils
+    
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python virtual environment
+      run: |
+        python3 -m venv build_venv
+        source build_venv/bin/activate
+        pip install --upgrade pip
+        pip install wheel setuptools
+    
+    - name: Install Python dependencies
+      run: |
+        source build_venv/bin/activate
+        pip install -r requirements_build.txt
+    
+    - name: Build application
+      run: |
+        echo "Building Python GUI Menu application..."
+        source build_venv/bin/activate
+        python3 build.py
+        
+        # Verify the build was successful
+        if [ ! -f "dist/menu" ]; then
+          echo "ERROR: Build failed - executable not found"
+          exit 1
+        fi
+        
+        # Get the package directory name
+        PACKAGE_DIR=$(ls -d menu_* 2>/dev/null | head -1)
+        if [ -z "$PACKAGE_DIR" ]; then
+          echo "ERROR: Package directory not found"
+          exit 1
+        fi
+        
+        echo "PACKAGE_DIR=$PACKAGE_DIR" >> $GITHUB_ENV
+        echo "Build successful - package created: $PACKAGE_DIR"
+    
+    - name: Prepare RPM build environment
+      run: |
+        # Set up RPM build directories
+        mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+        
+        # Remove version prefix if present (v1.0.0 -> 1.0.0)
+        VERSION="${APP_VERSION#v}"
+        echo "RPM_VERSION=$VERSION" >> $GITHUB_ENV
+        
+        # Create source tarball
+        TARBALL_NAME="${APP_NAME}-${VERSION}.tar.gz"
+        tar -czf ~/rpmbuild/SOURCES/$TARBALL_NAME \
+          --transform "s|^|${APP_NAME}-${VERSION}/|" \
+          --exclude=".git*" \
+          --exclude="build_venv" \
+          --exclude="build" \
+          --exclude="__pycache__" \
+          --exclude="*.pyc" \
+          .
+        
+        echo "TARBALL_NAME=$TARBALL_NAME" >> $GITHUB_ENV
+    
+    - name: Create RPM spec file
+      run: |
+        cat > ~/rpmbuild/SPECS/${APP_NAME}.spec << 'EOF'
+        Name:           python-gui-menu
+        Version:        %{getenv:RPM_VERSION}
+        Release:        1%{?dist}
+        Summary:        Python GUI Menu Application
+        License:        MIT
+        URL:            https://github.com/${{ github.repository }}
+        Source0:        %{name}-%{version}.tar.gz
+        
+        BuildRequires:  python3
+        BuildRequires:  python3-pip
+        BuildRequires:  python3-venv
+        BuildRequires:  qt5-qtbase-devel
+        BuildRequires:  desktop-file-utils
+        
+        Requires:       qt5-qtbase-gui
+        Requires:       qt5-qtwayland
+        Requires:       libxcb
+        Requires:       fontconfig
+        
+        %description
+        A cross-platform GUI menu application built with Python and PyQt5.
+        Provides a customizable menu interface for executing system commands.
+        
+        %prep
+        %autosetup
+        
+        %build
+        # Create virtual environment and build
+        python3 -m venv build_venv
+        source build_venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements_build.txt
+        python3 build.py
+        
+        %install
+        # Create installation directories
+        mkdir -p %{buildroot}/opt/PythonMenu
+        mkdir -p %{buildroot}/opt/PythonMenu/Docs
+        mkdir -p %{buildroot}/usr/bin
+        mkdir -p %{buildroot}/usr/share/applications
+        mkdir -p %{buildroot}/usr/share/pixmaps
+        
+        # Find the generated package directory
+        PACKAGE_DIR=$(ls -d menu_* 2>/dev/null | head -1)
+        if [ -z "$PACKAGE_DIR" ]; then
+          echo "ERROR: Package directory not found during install"
+          exit 1
+        fi
+        
+        # Install application files to /opt/PythonMenu
+        cp -r $PACKAGE_DIR/* %{buildroot}/opt/PythonMenu/
+        
+        # Ensure executable has correct permissions
+        chmod +x %{buildroot}/opt/PythonMenu/menu
+        
+        # Install run script with correct permissions
+        if [ -f %{buildroot}/opt/PythonMenu/run_linux.sh ]; then
+          chmod +x %{buildroot}/opt/PythonMenu/run_linux.sh
+        fi
+        
+        # Install greeting script if it exists
+        if [ -f %{buildroot}/opt/PythonMenu/greeting.sh ]; then
+          chmod +x %{buildroot}/opt/PythonMenu/greeting.sh
+        fi
+        
+        # Create wrapper script in /usr/bin
+        cat > %{buildroot}/usr/bin/python-gui-menu << 'WRAPPER_EOF'
+        #!/bin/bash
+        cd /opt/PythonMenu
+        exec ./menu "$@"
+        WRAPPER_EOF
+        chmod +x %{buildroot}/usr/bin/python-gui-menu
+        
+        # Install desktop entry
+        cat > %{buildroot}/usr/share/applications/python-gui-menu.desktop << 'DESKTOP_EOF'
+        [Desktop Entry]
+        Name=Python GUI Menu
+        Comment=Customizable GUI menu application
+        Exec=/usr/bin/python-gui-menu
+        Icon=python-gui-menu
+        Terminal=false
+        Type=Application
+        Categories=Utility;System;
+        DESKTOP_EOF
+        
+        # Install icon if available
+        if [ -f %{buildroot}/opt/PythonMenu/logo.png ]; then
+          cp %{buildroot}/opt/PythonMenu/logo.png %{buildroot}/usr/share/pixmaps/python-gui-menu.png
+        elif [ -f %{buildroot}/opt/PythonMenu/smallicon.png ]; then
+          cp %{buildroot}/opt/PythonMenu/smallicon.png %{buildroot}/usr/share/pixmaps/python-gui-menu.png
+        fi
+        
+        %files
+        /opt/PythonMenu/
+        /usr/bin/python-gui-menu
+        /usr/share/applications/python-gui-menu.desktop
+        /usr/share/pixmaps/python-gui-menu.png
+        
+        %post
+        # Update desktop database
+        if [ -x /usr/bin/update-desktop-database ]; then
+          /usr/bin/update-desktop-database -q /usr/share/applications || :
+        fi
+        
+        %postun
+        # Update desktop database
+        if [ -x /usr/bin/update-desktop-database ]; then
+          /usr/bin/update-desktop-database -q /usr/share/applications || :
+        fi
+        
+        %changelog
+        * $(date '+%a %b %d %Y') GitHub Actions <actions@github.com> - %{version}-1
+        - Automated build from GitHub Actions
+        - Cross-platform enhanced build mode
+        - Installation in /opt/PythonMenu directory
+        
+        EOF
+    
+    - name: Build RPM package
+      run: |
+        rpmbuild -ba ~/rpmbuild/SPECS/${APP_NAME}.spec
+        
+        # Find the generated RPM
+        RPM_FILE=$(find ~/rpmbuild/RPMS -name "*.rpm" -type f | head -1)
+        if [ -z "$RPM_FILE" ]; then
+          echo "ERROR: RPM package not found"
+          exit 1
+        fi
+        
+        # Copy to workspace for artifact upload
+        cp "$RPM_FILE" ./
+        RPM_FILENAME=$(basename "$RPM_FILE")
+        echo "RPM_FILENAME=$RPM_FILENAME" >> $GITHUB_ENV
+        
+        echo "RPM package built successfully: $RPM_FILENAME"
+    
+    - name: Test RPM installation
+      run: |
+        echo "Testing RPM installation..."
+        dnf install -y ./$RPM_FILENAME
+        
+        # Verify installation
+        if [ ! -f "/opt/PythonMenu/menu" ]; then
+          echo "ERROR: Application not installed correctly"
+          exit 1
+        fi
+        
+        if [ ! -x "/usr/bin/python-gui-menu" ]; then
+          echo "ERROR: Wrapper script not installed correctly"  
+          exit 1
+        fi
+        
+        if [ ! -f "/usr/share/applications/python-gui-menu.desktop" ]; then
+          echo "ERROR: Desktop entry not installed correctly"
+          exit 1
+        fi
+        
+        echo "RPM installation test passed!"
+        
+        # Show package info
+        echo "=== Package Information ==="
+        rpm -qi python-gui-menu
+        
+        echo "=== Package Files ==="
+        rpm -ql python-gui-menu
+    
+    - name: Upload RPM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpm-package
+        path: ${{ env.RPM_FILENAME }}
+        retention-days: 30
+    
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.RPM_FILENAME }}
+        generate_release_notes: true
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
