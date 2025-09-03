@@ -37,14 +37,18 @@ class OutputTerminal(QTextEdit):
     def append_output(self, text, error=False):
         """Append text to the terminal with appropriate formatting"""
         
-        # Clean and format the text first
+        # Clean and format the text first (this includes ANSI-to-HTML conversion)
         text = self.clean_and_format_text(text)
         
         # Process text to handle newlines properly
-        color = "#cc0000" if error else "#333333"
+        default_color = "#cc0000" if error else "#333333"
         
-        # HTML escape the text to preserve formatting
-        text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # Check if text already contains HTML spans (from ANSI conversion)
+        has_html_formatting = '<span' in text
+        
+        if not has_html_formatting:
+            # HTML escape only if no HTML formatting is present
+            text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         
         # Replace newlines with HTML line breaks
         text = text.replace("\n", "<br>")
@@ -57,23 +61,29 @@ class OutputTerminal(QTextEdit):
             cursor.movePosition(cursor.End)
             cursor.select(cursor.LineUnderCursor)
             cursor.removeSelectedText()
-            cursor.insertHtml(f"<span style='color: {color};'>{lines[-1]}</span>")
+            if has_html_formatting:
+                cursor.insertHtml(lines[-1])
+            else:
+                cursor.insertHtml(f"<span style='color: {default_color};'>{lines[-1]}</span>")
         else:
             # Normal append for text without carriage returns
-            self.append(f"<span style='color: {color};'>{text}</span>")
+            if has_html_formatting:
+                # Text already has HTML formatting from ANSI conversion
+                self.insertHtml(text)
+            else:
+                # Apply default color
+                self.append(f"<span style='color: {default_color};'>{text}</span>")
         
         # Scroll to bottom
         self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
     
     def clean_and_format_text(self, text):
-        """Clean text by removing ANSI escape sequences and formatting non-printable characters"""
+        """Convert ANSI escape sequences to HTML formatting and clean non-printable characters"""
         if not text:
             return text
         
-        # Remove ANSI escape sequences (color codes, cursor movement, etc.)
-        # Pattern matches: ESC[ followed by any number of digits, semicolons, and ends with a letter
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        text = ansi_escape.sub('', text)
+        # Convert ANSI escape sequences to HTML
+        text = self.ansi_to_html(text)
         
         # Remove other common escape sequences
         # Bell character (ASCII 7)
@@ -113,6 +123,152 @@ class OutputTerminal(QTextEdit):
                 cleaned_chars.append(char)
         
         return ''.join(cleaned_chars)
+    
+    def ansi_to_html(self, text):
+        """Convert ANSI escape sequences to HTML formatting"""
+        if not text:
+            return text
+        
+        # ANSI color mapping to HTML colors
+        ansi_colors = {
+            '30': '#000000',  # Black
+            '31': '#cd0000',  # Red
+            '32': '#00cd00',  # Green
+            '33': '#cdcd00',  # Yellow
+            '34': '#0000ee',  # Blue
+            '35': '#cd00cd',  # Magenta
+            '36': '#00cdcd',  # Cyan
+            '37': '#e5e5e5',  # White
+            '90': '#7f7f7f',  # Bright Black (Gray)
+            '91': '#ff0000',  # Bright Red
+            '92': '#00ff00',  # Bright Green
+            '93': '#ffff00',  # Bright Yellow
+            '94': '#5c5cff',  # Bright Blue
+            '95': '#ff00ff',  # Bright Magenta
+            '96': '#00ffff',  # Bright Cyan
+            '97': '#ffffff',  # Bright White
+        }
+        
+        ansi_bg_colors = {
+            '40': '#000000',  # Black background
+            '41': '#cd0000',  # Red background
+            '42': '#00cd00',  # Green background
+            '43': '#cdcd00',  # Yellow background
+            '44': '#0000ee',  # Blue background
+            '45': '#cd00cd',  # Magenta background
+            '46': '#00cdcd',  # Cyan background
+            '47': '#e5e5e5',  # White background
+            '100': '#7f7f7f', # Bright Black background
+            '101': '#ff0000', # Bright Red background
+            '102': '#00ff00', # Bright Green background
+            '103': '#ffff00', # Bright Yellow background
+            '104': '#5c5cff', # Bright Blue background
+            '105': '#ff00ff', # Bright Magenta background
+            '106': '#00ffff', # Bright Cyan background
+            '107': '#ffffff', # Bright White background
+        }
+        
+        # Current formatting state
+        current_style = {
+            'color': None,
+            'bg_color': None,
+            'bold': False,
+            'italic': False,
+            'underline': False
+        }
+        
+        result = []
+        i = 0
+        
+        while i < len(text):
+            # Look for ANSI escape sequence
+            if text[i:i+2] == '\x1b[':
+                # Find the end of the escape sequence
+                j = i + 2
+                while j < len(text) and text[j] not in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz':
+                    j += 1
+                
+                if j < len(text):
+                    # Extract the command
+                    command = text[i+2:j]
+                    end_char = text[j]
+                    
+                    if end_char == 'm':  # Color/formatting command
+                        # Parse the parameters
+                        params = command.split(';') if command else ['0']
+                        
+                        for param in params:
+                            param = param.strip()
+                            if not param:
+                                param = '0'
+                                
+                            if param == '0':  # Reset
+                                current_style = {
+                                    'color': None,
+                                    'bg_color': None,
+                                    'bold': False,
+                                    'italic': False,
+                                    'underline': False
+                                }
+                            elif param == '1':  # Bold
+                                current_style['bold'] = True
+                            elif param == '3':  # Italic
+                                current_style['italic'] = True
+                            elif param == '4':  # Underline
+                                current_style['underline'] = True
+                            elif param == '22':  # Normal intensity (not bold)
+                                current_style['bold'] = False
+                            elif param == '23':  # Not italic
+                                current_style['italic'] = False
+                            elif param == '24':  # Not underlined
+                                current_style['underline'] = False
+                            elif param in ansi_colors:  # Foreground color
+                                current_style['color'] = ansi_colors[param]
+                            elif param in ansi_bg_colors:  # Background color
+                                current_style['bg_color'] = ansi_bg_colors[param]
+                            elif param == '39':  # Default foreground
+                                current_style['color'] = None
+                            elif param == '49':  # Default background
+                                current_style['bg_color'] = None
+                        
+                        # Close any open span
+                        if result and result[-1] != '</span>':
+                            result.append('</span>')
+                        
+                        # Open new span with current style
+                        style_parts = []
+                        if current_style['color']:
+                            style_parts.append(f"color: {current_style['color']}")
+                        if current_style['bg_color']:
+                            style_parts.append(f"background-color: {current_style['bg_color']}")
+                        if current_style['bold']:
+                            style_parts.append("font-weight: bold")
+                        if current_style['italic']:
+                            style_parts.append("font-style: italic")
+                        if current_style['underline']:
+                            style_parts.append("text-decoration: underline")
+                        
+                        if style_parts:
+                            style_str = '; '.join(style_parts)
+                            result.append(f'<span style="{style_str}">')
+                        else:
+                            result.append('<span>')
+                    
+                    i = j + 1
+                else:
+                    # Malformed escape sequence, just add the character
+                    result.append(text[i])
+                    i += 1
+            else:
+                result.append(text[i])
+                i += 1
+        
+        # Close any remaining open span
+        text_result = ''.join(result)
+        if '<span' in text_result and not text_result.endswith('</span>'):
+            text_result += '</span>'
+        
+        return text_result
 
 class ProcessManager(QObject):
     """Manages command execution and emits output signals"""
