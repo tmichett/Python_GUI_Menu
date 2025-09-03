@@ -5,10 +5,12 @@ import subprocess
 import markdown
 import re
 import unicodedata
+from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
                             QWidget, QLabel, QTextEdit, QFrame, QStackedWidget,
                             QHBoxLayout, QGridLayout, QDialog, QSplitter, QLineEdit,
-                            QTextBrowser, QListWidget, QListWidgetItem, QScrollArea)
+                            QTextBrowser, QListWidget, QListWidgetItem, QScrollArea,
+                            QFileDialog, QMessageBox)
 from PyQt5.QtGui import QIcon, QPixmap, QFont, QDesktopServices
 from PyQt5.QtCore import Qt, QProcess, pyqtSignal, QObject, QUrl
 from font_manager import get_font_manager
@@ -269,6 +271,37 @@ class OutputTerminal(QTextEdit):
             text_result += '</span>'
         
         return text_result
+    
+    def get_plain_text_content(self):
+        """Extract plain text content from the terminal, removing HTML formatting"""
+        # Get the HTML content
+        html_content = self.toHtml()
+        
+        # Remove HTML tags but preserve line breaks
+        # First, replace <br> tags with newlines
+        text_content = html_content.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+        
+        # Remove all other HTML tags
+        text_content = re.sub(r'<[^>]+>', '', text_content)
+        
+        # Decode HTML entities
+        text_content = text_content.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"').replace('&#39;', "'")
+        
+        # Clean up extra whitespace while preserving intentional formatting
+        lines = text_content.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # Remove leading/trailing whitespace but preserve internal spacing
+            cleaned_line = line.strip()
+            if cleaned_line or (cleaned_lines and cleaned_lines[-1]):  # Keep empty lines between content
+                cleaned_lines.append(cleaned_line)
+        
+        # Remove trailing empty lines
+        while cleaned_lines and not cleaned_lines[-1]:
+            cleaned_lines.pop()
+        
+        return '\n'.join(cleaned_lines)
 
 class ProcessManager(QObject):
     """Manages command execution and emits output signals"""
@@ -408,6 +441,23 @@ class OutputWindow(QDialog):
         self.clear_button.clicked.connect(self.output_terminal.clear)
         button_layout.addWidget(self.clear_button)
         
+        # Save button
+        self.save_button = QPushButton("Save Output")
+        self.save_button.clicked.connect(self.save_output_to_file)
+        self.save_button.setStyleSheet("""
+            QPushButton {
+                background-color: #5cb85c;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4cae4c;
+            }
+        """)
+        button_layout.addWidget(self.save_button)
+        
         # Close button
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.hide)
@@ -428,6 +478,44 @@ class OutputWindow(QDialog):
         """Enable or disable the input controls"""
         self.input_field.setEnabled(enabled)
         self.send_button.setEnabled(enabled)
+    
+    def save_output_to_file(self):
+        """Save the current output content to a file"""
+        # Get the plain text content
+        content = self.output_terminal.get_plain_text_content()
+        
+        if not content.strip():
+            QMessageBox.information(self, "Save Output", "No output content to save.")
+            return
+        
+        # Create default filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"command_output_{timestamp}.txt"
+        
+        # Open file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Command Output",
+            default_filename,
+            "Text Files (*.txt);;Log Files (*.log);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Add header with timestamp
+                header = f"Command Output Saved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                header += "=" * 50 + "\n\n"
+                
+                full_content = header + content
+                
+                # Write to file with UTF-8 encoding
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(full_content)
+                
+                QMessageBox.information(self, "Save Output", f"Output saved successfully to:\n{file_path}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error", f"Failed to save output:\n{str(e)}")
 
 class HelpWindow(QDialog):
     """Help window with markdown rendering and navigation"""
@@ -1012,6 +1100,23 @@ class MenuApplication(QMainWindow):
         detach_button.clicked.connect(self.detach_output_window)
         header_layout.addWidget(detach_button)
         
+        # Add save button
+        save_button = QPushButton("Save Output")
+        save_button.setStyleSheet("""
+            QPushButton {
+                background-color: #5cb85c;
+                color: white;
+                border-radius: 3px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4cae4c;
+            }
+        """)
+        save_button.clicked.connect(self.save_output_to_file)
+        header_layout.addWidget(save_button)
+        
         # Add clear button
         clear_button = QPushButton("Clear")
         clear_button.setStyleSheet("""
@@ -1305,6 +1410,44 @@ class MenuApplication(QMainWindow):
         """Clear both output terminals"""
         self.output_text.clear()
         self.output_window.output_terminal.clear()
+    
+    def save_output_to_file(self):
+        """Save the current output content to a file"""
+        # Get the plain text content from the main output terminal
+        content = self.output_text.get_plain_text_content()
+        
+        if not content.strip():
+            QMessageBox.information(self, "Save Output", "No output content to save.")
+            return
+        
+        # Create default filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"command_output_{timestamp}.txt"
+        
+        # Open file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Command Output",
+            default_filename,
+            "Text Files (*.txt);;Log Files (*.log);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Add header with timestamp
+                header = f"Command Output Saved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                header += "=" * 50 + "\n\n"
+                
+                full_content = header + content
+                
+                # Write to file with UTF-8 encoding
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(full_content)
+                
+                QMessageBox.information(self, "Save Output", f"Output saved successfully to:\n{file_path}")
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error", f"Failed to save output:\n{str(e)}")
     
     def show_help(self):
         """Show the help window"""
