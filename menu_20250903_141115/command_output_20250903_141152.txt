@@ -1,0 +1,15 @@
+Command Output Saved: 2025-09-03 14:11:56
+==================================================
+
+p, li { white-space: pre-wrap; }
+
+Executing: ./greeting.sh
+--------------------------------------------------
+
+What is your name?
+> Travis
+
+Hello, Travis.
+
+--------------------------------------------------
+Command finished with exit code: 0

@@ -1,0 +1,9 @@
+---
+help_config: README.md
+help_graphic: ../logo.png
+help_topics:
+  - topic: Cloud-Init Lab VMs
+    document: Docs/LAB_CLOUDINIT_VMS.md
+  - topic: Update DNS Forwarders
+    document: Docs/update-dns-forwarders.md
+  
