@@ -4,6 +4,7 @@ import yaml
 import subprocess
 import markdown
 import re
+import unicodedata
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QVBoxLayout, 
                             QWidget, QLabel, QTextEdit, QFrame, QStackedWidget,
                             QHBoxLayout, QGridLayout, QDialog, QSplitter, QLineEdit,
@@ -36,6 +37,9 @@ class OutputTerminal(QTextEdit):
     def append_output(self, text, error=False):
         """Append text to the terminal with appropriate formatting"""
         
+        # Clean and format the text first
+        text = self.clean_and_format_text(text)
+        
         # Process text to handle newlines properly
         color = "#cc0000" if error else "#333333"
         
@@ -60,6 +64,55 @@ class OutputTerminal(QTextEdit):
         
         # Scroll to bottom
         self.verticalScrollBar().setValue(self.verticalScrollBar().maximum())
+    
+    def clean_and_format_text(self, text):
+        """Clean text by removing ANSI escape sequences and formatting non-printable characters"""
+        if not text:
+            return text
+        
+        # Remove ANSI escape sequences (color codes, cursor movement, etc.)
+        # Pattern matches: ESC[ followed by any number of digits, semicolons, and ends with a letter
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        text = ansi_escape.sub('', text)
+        
+        # Remove other common escape sequences
+        # Bell character (ASCII 7)
+        text = text.replace('\x07', '')
+        
+        # Backspace (ASCII 8) - remove it and the previous character
+        while '\x08' in text:
+            pos = text.find('\x08')
+            if pos > 0:
+                text = text[:pos-1] + text[pos+1:]
+            else:
+                text = text[pos+1:]
+        
+        # Form feed (ASCII 12)
+        text = text.replace('\x0c', '\n')
+        
+        # Vertical tab (ASCII 11)
+        text = text.replace('\x0b', '\n')
+        
+        # Handle other control characters (0-31 except tab, newline, carriage return)
+        cleaned_chars = []
+        for char in text:
+            code = ord(char)
+            if code < 32:  # Control characters
+                if char in ['\t', '\n', '\r']:
+                    # Keep these useful control characters
+                    cleaned_chars.append(char)
+                else:
+                    # Replace other control characters with placeholder or remove
+                    continue
+            elif code == 127:  # DEL character
+                continue
+            elif unicodedata.category(char).startswith('C') and char not in ['\t', '\n', '\r']:
+                # Other Unicode control characters (except tab, newline, carriage return)
+                continue
+            else:
+                cleaned_chars.append(char)
+        
+        return ''.join(cleaned_chars)
 
 class ProcessManager(QObject):
     """Manages command execution and emits output signals"""
@@ -86,15 +139,34 @@ class ProcessManager(QObject):
     
     def handle_stdout(self):
         """Handle standard output data"""
-        data = self.process.readAllStandardOutput().data().decode('utf-8', errors='replace')
+        raw_data = self.process.readAllStandardOutput().data()
+        data = self.decode_output(raw_data)
         if data:
             self.output_received.emit(data, False)
     
     def handle_stderr(self):
         """Handle standard error data"""
-        data = self.process.readAllStandardError().data().decode('utf-8', errors='replace')
+        raw_data = self.process.readAllStandardError().data()
+        data = self.decode_output(raw_data)
         if data:
             self.output_received.emit(data, True)
+    
+    def decode_output(self, raw_data):
+        """Decode raw output data with proper error handling"""
+        try:
+            # Try UTF-8 first
+            return raw_data.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                # Try Latin-1 as fallback (can decode any byte sequence)
+                decoded = raw_data.decode('latin-1')
+                # Add a note about encoding issues if there are suspicious characters
+                if any(ord(c) > 127 for c in decoded):
+                    return f"[Encoding issue detected - displaying as Latin-1]\n{decoded}"
+                return decoded
+            except UnicodeDecodeError:
+                # Last resort: replace problematic characters
+                return raw_data.decode('utf-8', errors='replace')
     
     def send_input(self, text):
         """Send input to the running process"""
